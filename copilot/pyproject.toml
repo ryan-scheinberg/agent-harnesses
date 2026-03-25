@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "integration: slow tests that require Copilot auth (run with: pytest -m integration)",
+]
