@@ -7,6 +7,91 @@ Thin orchestration harnesses for coding agents. Each harness wraps a specific ag
 | Name | SDK | Status |
 |------|-----|--------|
 | [`copilot/`](#copilot-multi-agent) | `github-copilot-sdk` | ✓ |
+| [`claude/`](#claude-multi-agent) | `claude-agent-sdk` | ✓ |
+
+---
+
+## claude-multi-agent
+
+A CLI orchestrator built on `claude-agent-sdk` that decomposes work into vertical slices and executes them sequentially. Port of the Copilot version with a cleaner SDK surface — stateless `query()` calls, structured reviewer output, built-in cost tracking.
+
+### How it works
+
+```
+python -m claude_multi_agent "Build a FastAPI service with health check and user CRUD"
+```
+
+1. **Planner** writes `PROJECT_BRIEF.md` and `slices/01-*.md … slices/N-*.md` to your working directory
+2. **Generator** picks the next undone slice, implements it using `complete-ticket` methodology, reports `COMPLETED_SLICE: <filename>`
+3. **Reviewer** reads the code (read-only via `disallowed_tools`). Returns structured JSON: `{"passed": bool, "feedback": str}`
+4. If `passed=false`, the generator gets one retry with the feedback
+5. Orchestrator marks the slice done via YAML frontmatter and loops
+6. Print summary: slices completed, retries, duration, total cost
+
+### Architecture
+
+```
+claude/
+├── claude_multi_agent/
+│   ├── __main__.py    # CLI entry point (argparse) + orchestrator loop
+│   ├── agents.py      # System prompts, query() wrappers, response parsing
+│   ├── types.py       # Slice, SliceResult, ReviewResult dataclasses
+│   └── log.py         # Structured JSON logging to stderr
+├── tests/             # Unit (56) + integration (1) tests
+├── example-test-from-integration/  # Real integration run output (Flask hello world)
+└── pyproject.toml
+```
+
+### Key differences from Copilot version
+
+| Aspect | Copilot | Claude |
+|--------|---------|--------|
+| Agent call | `CopilotClient` → `create_session` → events | `query()` → async iterator → `ResultMessage` |
+| Read-only enforcement | Custom permission handler + prompt | `disallowed_tools` (SDK-enforced) |
+| Reviewer output | Freeform text, silence = pass | Structured JSON `{"passed": bool, "feedback": str}` |
+| Cost tracking | None | `ResultMessage.total_cost_usd` per call |
+| Runaway protection | None | `max_turns` per agent |
+| Auth | GitHub token (Copilot subscription) | Claude Code CLI (`claude login`) |
+
+### Requirements
+
+- Python 3.12+
+- `claude-agent-sdk` (`pip install claude-agent-sdk`)
+- Claude Code CLI installed and authenticated (`npm install -g @anthropic-ai/claude-code && claude login`)
+- Skills at `~/.cursor/skills/`: `define-project`, `plan-to-jira`, `complete-ticket`
+
+### Usage
+
+```bash
+cd /your/project
+python -m claude_multi_agent "Build a FastAPI service with health check and user CRUD"
+
+# Override model (default: claude-sonnet-4-6)
+python -m claude_multi_agent "..." --model claude-opus-4
+```
+
+### Testing
+
+```bash
+cd claude/
+source .venv/bin/activate
+
+# Unit tests (56 tests, ~0.2s)
+python -m pytest tests/ -v
+
+# Integration test (hits real API, costs ~$0.27)
+python -m pytest -m integration -v
+```
+
+### Example: integration run output
+
+`example-test-from-integration/` contains real output from running the harness against `"Build a simple Flask hello world app"`:
+
+- `PROJECT_BRIEF.md` — scoped brief the planner wrote
+- `slices/01-flask-hello-world.md` — single slice, marked `status: done`
+- `app.py` — the generated Flask app
+- `test_app.py` — pytest with Flask test client
+- `requirements.txt` — `Flask`
 
 ---
 
@@ -43,62 +128,6 @@ copilot/
 ├── example-test-from-integration/  # Real integration run output (Flask hello world)
 └── pyproject.toml
 ```
-
-### Agents
-
-**Planner** — full tool access (file writes)
-- Skills: `define-project`, `plan-to-jira` (from `~/.copilot/skills/`)
-- Phase 1: explores cwd, writes `PROJECT_BRIEF.md`
-- Phase 2: breaks brief into vertical slices, writes `slices/NN-<title>.md`
-
-**Generator** — full tool access (file reads/writes, shell)
-- Skills: `complete-ticket`
-- New session per slice — clean context boundaries
-- Picks the next slice, implements it with TDD, ends with `COMPLETED_SLICE: <filename>`
-
-**Reviewer** — read-only
-- No skills, no file writes, no shell
-- Harsh system prompt: only failures, silence = pass, no praise
-- Outputs specific file/line/reason or nothing
-
-### Slice format
-
-Each slice file follows this structure:
-
-```markdown
-# <Title>
-
-## What
-<Demoable outcome>
-
-## Acceptance Criteria
-- <Testable criterion>
-
-## Key Decisions
-- <Constraints and architectural decisions>
-```
-
-When completed, the orchestrator prepends:
-
-```yaml
----
-status: done
-completed_at: 2026-03-25T19:08:44.784730+00:00
----
-```
-
-### Observability
-
-Structured JSON logs to stderr for every agent call:
-
-```json
-{"ts": "...", "agent": "planner",    "slice": null,              "duration_s": 12.3, "status": "ok"}
-{"ts": "...", "agent": "generator",  "slice": "01-project-setup", "duration_s": 45.1, "status": "ok"}
-{"ts": "...", "agent": "reviewer",   "slice": "01-project-setup", "duration_s": 8.2,  "status": "pass"}
-{"ts": "...", "agent": "generator",  "slice": "01-project-setup", "duration_s": 20.0, "status": "retry"}
-```
-
-Final summary to stdout: slices completed, retries used, total duration.
 
 ### Requirements
 
@@ -140,12 +169,3 @@ pytest -m integration
 - `slices/02-hello-world-route.md` — route implementation slice, marked `status: done`
 - `app.py` — the generated Flask app
 - `requirements.txt` — `flask>=3.0`
-
-This is a useful reference for what the planner's output looks like and how completed slice frontmatter is structured.
-
-### Known risks / open questions
-
-- **Reviewer softness** — Claude defaults to polite. The prompt is tuned for harshness but may need iteration if it starts producing false passes.
-- **Generator slice selection** — the generator picks which slice to implement. If it picks poorly, the orchestrator can't catch it without explicit validation.
-- **SDK maturity** — `github-copilot-sdk` is in technical preview. Pin to a known-good commit.
-- **No resume** — if a run fails mid-way, re-run from scratch. Slices with `status: done` are skipped, so partial progress is preserved.
