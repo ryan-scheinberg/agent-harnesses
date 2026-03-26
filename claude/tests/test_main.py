@@ -363,17 +363,17 @@ async def test_async_main_calls_planner_then_orchestrator(tmp_path):
     slices_dir = tmp_path / "slices"
     call_log = []
 
-    async def fake_planner(*, prompt, model, working_dir, skills):
+    async def fake_planner(*, prompt, model, working_dir, skills, debug=False):
         call_log.append("planner")
         slices_dir.mkdir(exist_ok=True)
         (slices_dir / "01-setup.md").write_text("# Setup\n\nSetup.\n")
         return 0.08
 
-    async def fake_generator(*, prompt, model, remaining_slices, working_dir, skills, feedback=None):
+    async def fake_generator(*, prompt, model, remaining_slices, working_dir, skills, feedback=None, debug=False):
         call_log.append("generator")
         return SliceResult(slice_filename=remaining_slices[0].filename, summary="ok"), 0.12
 
-    async def fake_reviewer(*, model, slice_filename, working_dir):
+    async def fake_reviewer(*, model, slice_filename, working_dir, debug=False):
         call_log.append("reviewer")
         return ReviewResult(slice_filename=slice_filename, passed=True, feedback=""), 0.03
 
@@ -398,7 +398,7 @@ def test_main_catches_cli_not_found(capsys):
     from claude_agent_sdk import CLINotFoundError
 
     with patch("claude_multi_agent.__main__._async_main", side_effect=CLINotFoundError("not found")), \
-         patch("claude_multi_agent.__main__.parse_args", return_value=type("Args", (), {"prompt": "x", "model": "m"})()), \
+         patch("claude_multi_agent.__main__.parse_args", return_value=type("Args", (), {"prompt": "x", "model": "m", "debug": False})()), \
          pytest.raises(SystemExit) as exc_info:
         main()
 
@@ -412,7 +412,7 @@ def test_main_catches_cli_connection_error(capsys):
     from claude_agent_sdk import CLIConnectionError
 
     with patch("claude_multi_agent.__main__._async_main", side_effect=CLIConnectionError("auth expired")), \
-         patch("claude_multi_agent.__main__.parse_args", return_value=type("Args", (), {"prompt": "x", "model": "m"})()), \
+         patch("claude_multi_agent.__main__.parse_args", return_value=type("Args", (), {"prompt": "x", "model": "m", "debug": False})()), \
          pytest.raises(SystemExit) as exc_info:
         main()
 
@@ -426,7 +426,7 @@ def test_main_catches_process_error(capsys):
     from claude_agent_sdk import ProcessError
 
     with patch("claude_multi_agent.__main__._async_main", side_effect=ProcessError("boom", exit_code=1, stderr="some error")), \
-         patch("claude_multi_agent.__main__.parse_args", return_value=type("Args", (), {"prompt": "x", "model": "m"})()), \
+         patch("claude_multi_agent.__main__.parse_args", return_value=type("Args", (), {"prompt": "x", "model": "m", "debug": False})()), \
          pytest.raises(SystemExit) as exc_info:
         main()
 
@@ -439,7 +439,7 @@ def test_main_catches_missing_skill(capsys):
     from claude_multi_agent.__main__ import main
 
     with patch("claude_multi_agent.__main__._async_main", side_effect=FileNotFoundError("~/.cursor/skills/define-project/SKILL.md")), \
-         patch("claude_multi_agent.__main__.parse_args", return_value=type("Args", (), {"prompt": "x", "model": "m"})()), \
+         patch("claude_multi_agent.__main__.parse_args", return_value=type("Args", (), {"prompt": "x", "model": "m", "debug": False})()), \
          pytest.raises(SystemExit) as exc_info:
         main()
 

@@ -24,6 +24,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default="claude-sonnet-4-6",
         help="Model override for all agents (default: claude-sonnet-4-6)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Stream full agent stderr (thoughts, tool calls) to stderr",
+    )
     return parser.parse_args(argv)
 
 
@@ -155,7 +160,9 @@ def print_summary(summary: dict) -> None:
     print(f"Total cost:       {cost_str}")
 
 
-async def _async_main(prompt: str, model: str, working_dir: str) -> dict:
+async def _async_main(
+    prompt: str, model: str, working_dir: str, *, debug: bool = False,
+) -> dict:
     """Full pipeline: load skills → plan → build/review loop → summary."""
     from claude_multi_agent.agents import (
         _load_skill,
@@ -179,6 +186,7 @@ async def _async_main(prompt: str, model: str, working_dir: str) -> dict:
         model=model,
         working_dir=working_dir,
         skills=skills,
+        debug=debug,
     )
     total_cost = _add_cost(total_cost, planner_cost)
     log_event(
@@ -197,6 +205,7 @@ async def _async_main(prompt: str, model: str, working_dir: str) -> dict:
             working_dir=working_dir,
             skills=skills,
             feedback=feedback,
+            debug=debug,
         )
 
     async def rev_fn(model, slice_filename):
@@ -204,6 +213,7 @@ async def _async_main(prompt: str, model: str, working_dir: str) -> dict:
             model=model,
             slice_filename=slice_filename,
             working_dir=working_dir,
+            debug=debug,
         )
 
     summary = await run_orchestrator(
@@ -222,7 +232,9 @@ def main() -> None:
     args = parse_args()
     working_dir = str(Path.cwd())
     try:
-        summary = asyncio.run(_async_main(args.prompt, args.model, working_dir))
+        summary = asyncio.run(
+            _async_main(args.prompt, args.model, working_dir, debug=args.debug)
+        )
     except FileNotFoundError as e:
         print(f"Required skill not found: {e}", file=sys.stderr)
         raise SystemExit(1)

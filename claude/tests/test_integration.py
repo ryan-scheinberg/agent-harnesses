@@ -22,6 +22,7 @@ async def test_full_pipeline_creates_brief_and_slices(tmp_path):
         prompt="Build a simple Flask hello world app with a single / route that returns 'Hello, World!'",
         model="claude-sonnet-4-6",
         working_dir=working_dir,
+        debug=True,
     )
 
     brief = tmp_path / "PROJECT_BRIEF.md"

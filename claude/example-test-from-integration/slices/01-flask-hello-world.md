@@ -1,24 +1,26 @@
 ---
 status: done
-completed_at: 2026-03-25T21:58:45.472859+00:00
+completed_at: 2026-03-25T22:21:54.742472+00:00
 ---
-# Flask Hello World — MVP Slice
+# Flask Hello World App
 
 ## What
 
-A working Flask app with a single `GET /` route returning `Hello, World!`, a passing pytest test, and a `requirements.txt`. Fully demoable: clone, install, run, curl, done.
+A running Flask app with a single `GET /` route that returns `Hello, World!`, a passing pytest test, pinned dependencies, and a README — fully functional end-to-end.
 
 ## Acceptance Criteria
 
-- `GET /` returns HTTP 200 with body `Hello, World!`
-- `pytest` passes with at least one test covering the route
-- `requirements.txt` pins Flask so `pip install -r requirements.txt` works clean
-- `python app.py` starts the dev server without errors
-- `.gitignore` excludes `__pycache__`, `.venv`, `*.pyc`
+- `requirements.txt` exists with Flask pinned to a specific version
+- `app.py` defines a Flask app with a single route: `GET /` returns `Hello, World!` with HTTP 200
+- `test_app.py` contains `test_index_returns_hello_world` using Flask's test client; asserts status code 200 and response body equals `Hello, World!`
+- `pytest` passes with zero failures from a clean `pip install -r requirements.txt`
+- `flask run` (or `python app.py`) starts the server without error and `curl http://localhost:5000/` returns `Hello, World!`
+- `README.md` includes install, run, and test instructions
 
 ## Key Decisions
 
-- Single `app.py` — no factory pattern, no blueprints
-- pytest + Flask test client for testing — no external HTTP calls in tests
-- Plain text response — no JSON envelope, no HTML template
-- Python 3.11+ assumed; no version pinning in `requirements.txt` beyond Flask itself
+- Flat structure: `app.py`, `test_app.py`, `requirements.txt`, `README.md` — no packages, no blueprints
+- Python 3.11+; Flask latest stable pinned explicitly (e.g. `Flask==3.1.0`)
+- Test uses Flask's built-in test client (`app.test_client()`), not a live server
+- App entry point: `app.py` creates the Flask instance as `app` and runs with `debug=False` under `if __name__ == "__main__"`
+- No `.env`, no config object — hardcode defaults at this scope
